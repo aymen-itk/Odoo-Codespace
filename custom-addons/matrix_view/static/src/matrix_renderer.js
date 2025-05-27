@@ -12,7 +12,18 @@ import { MatrixGroupByMenu } from "./matrix_group_by_menu";
 import { Component, onWillUpdateProps, useRef, useState } from "@odoo/owl";
 import { download } from "@web/core/network/download";
 import { useService } from "@web/core/utils/hooks";
+import { Domain } from "@web/core/domain";
+import { session } from "@web/session";
+const companyId = session.user_context.company_id;
+
 const formatters = registry.category("formatters");
+
+function updateSelection($items, index) {
+    $items.removeClass("active");
+    const $selected = $items.eq(index);
+    $selected.addClass("active");
+    $selected[0]?.scrollIntoView({ block: "nearest" });
+}
 
 export class MatrixRenderer extends Component {
     setup() {
@@ -23,6 +34,7 @@ export class MatrixRenderer extends Component {
         this.tableRef = useRef("table");
         this.orm = useService("orm");
         this.notification = useService("notification");
+        this.rootRef = useRef("root");
         onWillUpdateProps(() => {
             this.table = this.model.getTable() || { headers: [], rows: [] };
             this._cleanupTableStructure();
@@ -30,6 +42,12 @@ export class MatrixRenderer extends Component {
         this.state = useState({
             edits: {},
             isEditing: false,
+        });
+        this._m2oOptions = [];
+        document.addEventListener("click", (e) => {
+            if (!e.target.closest(".o_input_dropdown")) {
+                $(".o-autocomplete--dropdown-menu").remove();
+            }
         });
     }
     
@@ -64,6 +82,24 @@ export class MatrixRenderer extends Component {
         } else {
             this.table.rows = [];
         }
+    }
+    formatDate(value, fieldType) {
+        console.log("-------------------------formatDate----------")
+        console.log("value===",value,fieldType)
+        if (!value) {
+            return "";
+        }
+        const formattedDate = new Date(value);
+        const pad = (n) => String(n).padStart(2, '0');
+        if (fieldType === 'datetime') {
+            //return formattedDate.toISOString().slice(0, 19).replace('T', ' ');
+            return `${formattedDate.getFullYear()}-${pad(formattedDate.getMonth() + 1)}-${pad(formattedDate.getDate())} ${pad(formattedDate.getHours())}:${pad(formattedDate.getMinutes())}:${pad(formattedDate.getSeconds())}`;
+        }
+        else {
+            //return formattedDate.toISOString().split('T')[0];
+            return `${formattedDate.getFullYear()}-${pad(formattedDate.getMonth() + 1)}-${pad(formattedDate.getDate())}`;
+        }
+        
     }
     /**
      * Get the formatted value of the cell.
@@ -188,52 +224,769 @@ export class MatrixRenderer extends Component {
     //--------------------------------------------------------------------------
     // Handlers
     //--------------------------------------------------------------------------
+    /**
+     * Get the field type for a measure
+     * @param {string} measureName
+     * @returns {string}
+     */
+    getFieldType(measureName) {
+        const field = this.model.metaData.fields[measureName];
+        return field ? field.type : 'char';
+    }
+
+    /**
+     * Get selection options for a field
+     * @param {string} measureName
+     * @returns {Array[]}
+     */
+    getSelectionOptions(measureName) {
+        const field = this.model.metaData.fields[measureName];
+        return field.selection || [];
+    }
+
+    /**
+     * Fetch many2one options
+     * @param {string} fieldName
+     */
+    async getMany2OneOptions(fieldName) {
+        const field = this.model.metaData.fields[fieldName];
+        if (field.type === "many2one") {
+            const model = field.relation;
+            let domain = [];
+            const pattern = "(company_id and ['|', ('company_id', '=', False), ('company_id', 'parent_of', [company_id])] or ['|', ('company_id', '=', False), ('company_id', 'parent_of', [''])])";
+            // if (field.domain) {
+            //     // Replace the pattern with the actual company_id
+            //     var fieldDomain=JSON.stringify(field.domain);
+            //     if (fieldDomain.includes(pattern)) {
+            //         domain = companyId
+            //                     ? ['|', ['company_id', '=', false], ['company_id', 'parent_of', companyId]]
+            //                     : ['|', ['company_id', '=', false], ['company_id', 'parent_of', '']];
+            //         /*try {
+                    
+            //             var splitedDomain=fieldDomain.split('+');
+                        
+            //             if (splitedDomain.length > 1) {
+            //                 var additionalDomain=new Domain(eval(splitedDomain[1].trim())).toList();
+            //                 domain=[...companyDomain, ...additionalDomain];
+            //             }
+                    
+                    
+            //         } catch (error) {
+            //             console.error("Invalid domain:", field.domain, error);
+            //             domain=[]
+            //         }*/
+            //     }
+            //     else{
+            //         domain=new Domain(field.domain).toList();
+            //     }
+            // }
+            
+            const records = await this.orm.searchRead(model, domain, ["display_name"]);
+            return records;
+        }
+        return [];
+    }
+    async displayMany2oneRecord(ev, fieldName,row_id,row) {
+        // Remove any existing dropdown first
+        $(".o-autocomplete--dropdown-menu").remove();   
+        const options = await this.getMany2OneOptions(fieldName);
+        this._m2oOptions = options;
+        // The clicked .o_input_dropdown div
+        const dropdownEl = "#div_"+row_id+"_"+fieldName;
+        //setTimeout(() => {
+        const $input = $(dropdownEl).find("input.o-autocomplete--input");
+
+        /*if (!$input.length) {
+            console.warn("Input not found inside .o_input_dropdown");
+            return;
+        }*/
+        
+        const offset = $input.offset();
+        const inputHeight = $input.outerHeight();
+    
+        
+        const $menu = $('<ul>', {
+            class: "o-autocomplete--dropdown-menu ui-widget show dropdown-menu ui-autocomplete",
+            css: {
+                position: "fixed",
+                top: offset.top + inputHeight,
+                left: offset.left,
+                "z-index": 1000,
+            },
+            id: "dropdown-menu_"+row_id+"_"+fieldName,
+        });
+        const self = this;
+        options.forEach(opt => {
+            const $item = $('<li>', {
+                class: "o-autocomplete--dropdown-item ui-menu-item d-block"
+            }).append(
+                $('<a>', {
+                    href: "#",
+                    class: "dropdown-item ui-menu-item-wrapper text-truncate",
+                    text: opt.display_name,
+                    click: (e) => {
+                        e.preventDefault();
+                        
+                        //this.row.data[fieldName] = opt.id;
+                        //alert("Selected Many2oneRecord: "+ opt.id + '-'+ opt.display_name);
+                        //self.row.data[fieldName] = { id: opt.id, label: opt.display_name };
+                        self._selectMany2OneOption(opt, fieldName,$menu, dropdownEl,row);
+                        self.render();
+                    }
+                })
+            );
+            $menu.append($item);
+        });
+    
+        // Optional "Search More"
+        /*$menu.append(
+            $('<li>', { class: "o-autocomplete--dropdown-item ui-menu-item d-block o_m2o_dropdown_option o_m2o_dropdown_option_search_more" })
+                .append(
+                    $('<a>', {
+                        href: "#",
+                        class: "dropdown-item ui-menu-item-wrapper text-truncate",
+                        text: "Search More...",
+                        click: (e) => {
+                            e.preventDefault();
+                            alert("Open search modal (to be implemented)");
+                        }
+                    })
+                )
+        );*/
+    
+        $("body").append($menu);
+        /*$input.off("keyup.m2o").on("keyup.m2o", (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            this._filterMany2OneOptions(query, fieldName, $menu,dropdownEl,row);
+        });*/
+        /*$input.addEventListener("keyup", (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            this._filterMany2OneOptions(query, fieldName, $(dropdownEl));
+        });*/
+        //},1000);
+        let selectedIndex = -1;
+        $input.off("keydown.m2o").on("keydown.m2o", function (e) {
+            const menuItems = $('#dropdown-menu_'+row_id+'_'+fieldName).find("li.o-autocomplete--dropdown-item");
+            const total = menuItems.length;
+            //if (!total) return;
+            // If the menu is not open, do nothing
+            if (!$menu.is(":visible")) {
+                 $("body").append($menu);
+            }
+            switch (e.key) {
+                case "ArrowDown":
+                    e.preventDefault();
+                    
+                    selectedIndex = (selectedIndex + 1) % total;
+                    updateSelection(menuItems, selectedIndex);
+                    break;
+
+                case "ArrowUp":
+                    e.preventDefault();
+                    selectedIndex = (selectedIndex - 1 + total) % total;
+                    updateSelection(menuItems, selectedIndex);
+                    break;
+
+                case "Enter":
+                    e.preventDefault();
+                    if (selectedIndex >= 0 && selectedIndex < total) {
+                        $(menuItems[selectedIndex]).find("a")[0].click();
+                    }
+                    break;
+                case "Escape":
+                    e.preventDefault();
+                    $menu.remove();
+                    break;
+                default:
+                    // Handle other keys if needed
+                    const query = e.target.value.toLowerCase().trim();
+                    self._filterMany2OneOptions(query, fieldName, $menu,dropdownEl,row);
+                    break;
+
+            }
+        });
+        
+        
+    }
+    
+    _filterMany2OneOptions(query, fieldName, $menu,dropdownEl,row) {
+        //alert("_filterMany2OneOptions")
+        const filtered = this._m2oOptions.filter(opt =>
+            opt.display_name.toLowerCase().includes(query)
+        );
+        const self = this;
+        const $menu_displayed = $(".o-autocomplete--dropdown-menu");
+        $menu.empty();  // Clear old items
+    
+        filtered.forEach(opt => {
+            const $item = $('<li>', {
+                class: "o-autocomplete--dropdown-item ui-menu-item d-block"
+            }).append(
+                $('<a>', {
+                    href: "#",
+                    class: "dropdown-item ui-menu-item-wrapper text-truncate",
+                    html: this._highlightMatch(opt.display_name, query),
+                    click: (e) => {
+                        e.preventDefault();
+                        //alert("Selected Many2OneOption: "+ opt.id + '-'+ opt.display_name);
+                        //self.row.data[fieldName] = { id: opt.id, label: opt.display_name };
+                        self._selectMany2OneOption(opt, fieldName,$menu, dropdownEl,row);
+                        self.render();
+                    },
+                    
+                })
+            );
+            $menu.append($item);
+        });
+    
+        // If no results, show "No match"
+        if (!filtered.length) {
+            $menu.append(
+                $('<li>', {
+                    class: "o-autocomplete--dropdown-item ui-menu-item d-block text-muted px-3",
+                    text: "No matching results"
+                })
+            );
+        }
+    
+        // Always add Search More
+        /*$menu.append(
+            $('<li>', { class: "o-autocomplete--dropdown-item ui-menu-item d-block o_m2o_dropdown_option o_m2o_dropdown_option_search_more" })
+                .append(
+                    $('<a>', {
+                        href: "#",
+                        class: "dropdown-item ui-menu-item-wrapper text-truncate",
+                        text: "Search More...",
+                        click: (e) => {
+                            e.preventDefault();
+                            alert("Open search modal (to be implemented)");
+                        }
+                    })
+                )
+        );*/
+        if ($menu_displayed.length<=0) {
+            // Append the menu to the body
+           $("body").append($menu);
+        }
+    }
+    _selectMany2OneOption(option, fieldName,$menu,dropdownEl,row) {
+        const input = $(dropdownEl).find("input.o-autocomplete--input");
+        if (!input) {
+            console.warn("Input not found inside .o_input_dropdown");
+            return;
+        }
+        // Set the value of the input to the selected option 
+        input.val(option.display_name);
+        input.attr('data-value', option.id);
+        input.closest('td').attr('data-tooltip', option.display_name);
+        // Set the value of the row data to the selected option
+        if (row.data){
+            (row.data)[fieldName] = { id: option.id, label: option.display_name };
+        }
+        // Remove the dropdown menu
+        $menu.remove();
+        
+    
+    }
+    _highlightMatch(name, query) {
+        const escapedName = name.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const index = escapedName.toLowerCase().indexOf(query);
+        if (index === -1) return escapedName;
+    
+        const before = escapedName.slice(0, index);
+        const match = escapedName.slice(index, index + query.length);
+        const after = escapedName.slice(index + query.length);
+    
+        return `${before}<strong>${match}</strong>${after}`;
+    }
+    
     //Edit Button to make the matrix cells editable and show the Save and Cancel Buttons
     onEditButtonClicked(){
+        const edits = {};
+        
+        this.table.rows.forEach(row => {
+            var rowgroupbys_length=this.model.metaData.rowGroupBys.length;
+            var record_line=this.model.metaData.rowGroupBys[rowgroupbys_length-1];
+            var record_line_id=row.data[record_line]?.value;
+            edits[record_line_id] = {};
+            this.model.metaData.rowGroupBys.forEach(field => {
+                const fieldName = field.split(':')[0];
+                edits[record_line_id][fieldName] = row.data[fieldName]?.value;
+            });
+        });
+        this.state.edits = edits;
+        this.state.isEditing = true;
         $('.o_matrix_edit').hide();
         $('.o_matrix_download').hide();
         $('.o_matrix_save').show();
         $('.o_matrix_cancel').show();
-        this.state.isEditing = !this.state.isEditing;
-        if (!this.state.isEditing) {
-            this.state.edits = {};
+        const firstInput = $('.edit_mode').first();
+        if (firstInput) {
+            firstInput.focus();
         }
     }
-    onFieldEdit(rowId, fieldName, value) {
-        if (!this.state.edits[rowId]) {
-            this.state.edits[rowId] = {};
+    onFieldEdit(fieldname_id,row,cell=null) {
+        
+        const input = $('#'+fieldname_id);
+        const value = input.val();
+        input.attr('data-value', value);
+        console.log("fieldname_id",fieldname_id,row,cell);
+        if (row.isNew){
+            if (cell){
+                cell.value=value
+            }
+            else {
+                //row.value=value;
+                let fieldName = fieldname_id.split('_')[0];
+                row.data[fieldName].value=value;
+            }
         }
-        this.state.edits[rowId][fieldName] = value;
+    }
+    
+    _getRecordIdsForRow(row) {
+        const domain = [];
+        
+        // Build domain from row group values
+        this.metaData.rowGroupBys.forEach(groupBy => {
+            const fieldName = groupBy.split(':')[0];
+            const value = row.data[fieldName]?.value;
+            if (value !== undefined && value !== null) {
+                domain.push([fieldName, '=', value]);
+            }
+        });
+
+        if (domain.length === 0) return [];
+        
+        // Get matching record IDs
+        return this.orm.search(this.metaData.resModel, domain, { limit: 1000 });
     }
     //Save Button to save the modified datas and render the readonly mode
-    async onSaveButtonClicked(){
-        $('.o_matrix_edit').show();
-        $('.o_matrix_download').show();
-        $('.o_matrix_save').hide();
-        $('.o_matrix_cancel').hide();
-        try {
-            const updates = [];
-            for (const [rowId, changes] of Object.entries(this.state.edits)) {
-                updates.push({
-                    id: rowId,
-                    changes,
-                });
+    
+    async _getRecordDataForCell(groupId,cell_field) {
+        const domain = [];
+        // Add row group filters
+        console.log("groupId",groupId);
+        this.model.metaData.rowGroupBys.forEach((groupBy, index) => {
+            console.log("groupBy",groupBy);
+            console.log("groupId[0][index]",groupId[0][index]);
+            const fieldName = groupBy.split(':')[0];
+            var value = groupId[0][index];
+            const fieldInfo = this.model.metaData.fields[fieldName]
+            if (fieldInfo && fieldInfo.type === 'date') {
+                value = this.formatDate(value, 'date');
             }
             
-            await this.orm.write(
-                this.props.model.metaData.resModel,
-                updates.map(u => u.id),
-                updates.map(u => u.changes)
-            );
             
-            this.notification.add(_t("Changes saved successfully"), { type: "success" });
-            this.state.isEditing = false;
-            this.state.edits = {};
-            this.props.model.load(this.props.model.searchParams); // Refresh data
-        } catch (error) {
-            this.notification.add(_t("Error saving changes"), { type: "danger" });
-            console.error(error);
+            if (value) domain.push([fieldName, '=', value]);
+        });
+        
+        
+        // Add column group filters
+        this.model.metaData.colGroupBys.forEach((groupBy, index) => {
+            console.log("groupId[1][index]",groupId[1][index]);
+            const fieldName = groupBy.split(':')[0];
+            var value = groupId[1][index];
+            const fieldInfo = this.model.metaData.fields[fieldName]
+            if (fieldInfo && fieldInfo.type === 'date') {
+                value = this.formatDate(value, 'date');
+            }
+            if (value) domain.push([fieldName, '=', value]);
+        });
+        
+        
+        if (domain.length === 0) return [];
+        console.log("domain========>",domain);
+        //return this.orm.search(this.model.metaData.resModel, domain, { limit: 1000 }).then((recordIds) => {return recordIds;});
+        const allFields = [
+            'id',cell_field,
+            ...this.model.metaData.rowGroupBys.map(f => f.split(':')[0]),
+            ...this.model.metaData.colGroupBys.map(f => f.split(':')[0]),
+        ];
+
+        const recordIds = await this.orm.search(this.model.metaData.resModel, domain, { limit: 1000 });
+        if (!recordIds.length) return [];
+
+        const records = await this.orm.read(this.model.metaData.resModel, recordIds, allFields);
+
+        return records;
+        
+    }
+    async onSaveButtonClicked() {
+        const edits = {};
+        const creates = [];
+        const updates = [];
+        let row_index = 0;
+
+        for (const row of this.table.rows) {
+            let cell_index = 0;
+            for (const cell of row.subGroupMeasurements) {
+                if (! cell.value){
+                    console.log("cell.value is null or undefined",cell,row);
+                }
+                const tocreate = {};
+                if (cell.groupId !== undefined && cell.groupId !== null) {
+                    console.log("row==========>",row)
+                    console.log("row.isNew==========>",row.isNew)
+                    if (row.isNew){
+                        const fieldName = cell.measure;
+                        const new_value = $('#' + fieldName + '_' + row_index + '_' + cell_index).val();
+                        if (new_value !== undefined && new_value !== null && new_value != 0){
+                            tocreate[fieldName] = new_value;
+                        }
+                        var row_field_index=0
+                        this.model.metaData.rowGroupBys.forEach(field => {
+                            const fieldName = field.split(':')[0];
+                            const fieldInfo = this.model.metaData.fields[fieldName];
+                            var gbys_new_value = $('#' + fieldName + '_' + row_index).attr('data-value');
+                            if (fieldInfo && (fieldInfo.type === 'date' || fieldInfo.type === 'datetime')) {
+                                gbys_new_value = this.formatDate(gbys_new_value, 'date');
+                            }
+                            
+                            tocreate[fieldName] = gbys_new_value;
+                            row_field_index++;
+                        });
+                        var colfield_index=0
+                        this.model.metaData.colGroupBys.forEach(colfield => {
+                            const colfieldName = colfield.split(':')[0];
+                            const colfieldInfo = this.model.metaData.fields[colfieldName];
+                            var col_old_value = cell.groupId[1][colfield_index];
+                            if (colfieldInfo && (colfieldInfo.type === 'date' || colfieldInfo.type === 'datetime')) {
+                                col_old_value = this.formatDate(col_old_value, 'date');
+                            }
+                            
+                            tocreate[colfieldName] = col_old_value;
+                            colfield_index++;
+                        });
+                    }
+                    else{
+                        const records = await this._getRecordDataForCell(cell.groupId,cell.measure) || [];
+                        const fieldName = cell.measure;
+                        const value = cell.value;
+                        const new_value = $('#' + fieldName + '_' + row_index + '_' + cell_index).val();
+                        let new_value_updated = false;
+                        console.log("records",records,records.length);
+                        if (records.length > 1) {
+                            // Handle multiple records
+                            for (const rec of records) {
+                                const record_line_id = rec.id;
+                                edits[record_line_id] = {};
+                                const rec_value=rec[cell.measure];
+                                console.log("record_line_id",record_line_id,value,new_value,new_value_updated);
+                                if (new_value !== undefined && new_value !== null && new_value != 0) {
+                                    if (new_value < value && !new_value_updated) {
+                                        edits[record_line_id][fieldName] = rec_value-(value - new_value);
+                                        new_value_updated = true;
+                                    } else if (new_value > value && !new_value_updated) {
+                                        tocreate[fieldName] = new_value - value;
+                                        new_value_updated = true;
+                                    }
+                                }
+
+                                this.model.metaData.rowGroupBys.forEach(field => {
+                                    const fieldName = field.split(':')[0];
+                                    var gbys_old_value = row.data[fieldName]?.value;
+                                    var gbys_new_value = $('#' + fieldName + '_' + row_index).attr('data-value');
+                                    const fieldInfo = this.model.metaData.fields[fieldName];
+                                    if (gbys_old_value !== gbys_new_value && gbys_new_value !== undefined && gbys_new_value !== null) {
+                                        if (fieldInfo && fieldInfo.type === 'date') {
+                                            gbys_new_value = this.formatDate(gbys_new_value, 'date');
+                                            gbys_old_value = this.formatDate(gbys_old_value, 'date');
+                                        }
+                                        else if (fieldInfo && fieldInfo.type === 'many2one') {
+                                            gbys_new_value = parseInt(gbys_new_value);
+                                            console.log("gbys_new_value",gbys_new_value);
+                                            console.log("gbys_old_value",gbys_old_value);
+                                        }
+                                        edits[record_line_id][fieldName] = gbys_new_value;
+                                    }
+                                    if (tocreate) {
+                                        if (fieldInfo && fieldInfo.type === 'date') {
+                                            gbys_new_value = this.formatDate(gbys_new_value, 'date');
+                                            gbys_old_value = this.formatDate(gbys_old_value, 'date');
+                                        }
+                                        else if (fieldInfo && fieldInfo.type === 'many2one') {
+                                            gbys_new_value = parseInt(gbys_new_value);
+                                            console.log("gbys_new_value",gbys_new_value);
+                                            console.log("gbys_old_value",gbys_old_value);
+                                        }
+                                        const tocreate_value=gbys_new_value? gbys_new_value : gbys_old_value;
+                                        console.log("tocreate_value",tocreate_value);
+                                        tocreate[fieldName] = tocreate_value;
+                                        this.model.metaData.colGroupBys.forEach(colfield => {
+                                            const colfieldName = colfield.split(':')[0];
+                                            const colfieldInfo = this.model.metaData.fields[colfieldName];
+                                            var col_old_value = rec[colfieldName];
+                                            if (colfieldInfo && (colfieldInfo.type === 'date' || colfieldInfo.type === 'datetime')) {
+                                                col_old_value = this.formatDate(col_old_value, 'date');
+                                            }
+                                            else if (colfieldInfo.type === 'many2one') {
+                                                col_old_value = rec[colfieldName][0];
+                                            }
+                                            
+                                            tocreate[colfieldName] = col_old_value;
+                                        });
+                                    }
+                                });
+
+                                updates.push({
+                                    id: parseInt(record_line_id, 10),
+                                    changes: edits[record_line_id]
+                                });
+                            }
+                        } 
+                        else if (records.length === 1) {
+                            // Handle single record
+                            const record_line_id = records[0].id;
+                            edits[record_line_id] = {};
+                            if (new_value !== undefined && new_value !== null && new_value != 0) {
+                                edits[record_line_id][fieldName] = new_value;
+                                new_value_updated = true;
+                            }
+
+                            this.model.metaData.rowGroupBys.forEach(field => {
+                                const fieldName = field.split(':')[0];
+                                var gbys_old_value = row.data[fieldName]?.value;
+                                var gbys_new_value = $('#' + fieldName + '_' + row_index).attr('data-value');
+                                const fieldInfo = this.model.metaData.fields[fieldName];
+                                if (gbys_old_value !== gbys_new_value && gbys_new_value !== undefined && gbys_new_value !== null) {
+                                    if (fieldInfo && fieldInfo.type === 'date') {
+                                        gbys_new_value = this.formatDate(gbys_new_value, 'date');
+                                        gbys_old_value = this.formatDate(gbys_old_value, 'date');
+                                    }
+                                    else if (fieldInfo && fieldInfo.type === 'many2one') {
+                                        gbys_new_value = parseInt(gbys_new_value);
+                                        console.log("gbys_new_value",gbys_new_value);
+                                        console.log("gbys_old_value",gbys_old_value);
+                                    }
+                                    edits[record_line_id][fieldName] = gbys_new_value;
+                                }
+                                if (tocreate) {
+                                    if (fieldInfo && fieldInfo.type === 'date') {
+                                        gbys_new_value = this.formatDate(gbys_new_value, 'date');
+                                        gbys_old_value = this.formatDate(gbys_old_value, 'date');
+                                    }
+                                    else if (fieldInfo && fieldInfo.type === 'many2one') {
+                                        gbys_new_value = parseInt(gbys_new_value);
+                                        console.log("gbys_new_value",gbys_new_value);
+                                        console.log("gbys_old_value",gbys_old_value);
+                                    }
+                                    const tocreate_value=gbys_new_value? gbys_new_value : gbys_old_value;
+                                    console.log("tocreate_value",tocreate_value);
+
+                                    this.model.metaData.colGroupBys.forEach(colfield => {
+                                        const colfieldName = colfield.split(':')[0];
+                                        const colfieldInfo = this.model.metaData.fields[colfieldName];
+                                        var col_old_value = records[0][colfieldName];
+                                        if (colfieldInfo && (colfieldInfo.type === 'date' || colfieldInfo.type === 'datetime')) {
+                                            col_old_value = this.formatDate(col_old_value, 'date');
+                                        }
+                                        else if (colfieldInfo.type === 'many2one') {
+                                            col_old_value = records[0][colfieldName][0];
+                                        }
+                                        tocreate[colfieldName] = col_old_value;
+                                    });
+                                    
+                                }
+                            });
+
+                            updates.push({
+                                id: parseInt(record_line_id, 10),
+                                changes: edits[record_line_id]
+                            });
+                        }
+                        else if (new_value !== undefined && new_value !== null && new_value != 0) {
+                            // Handle new record
+                            tocreate[fieldName] = new_value;
+                            
+                            var row_field_index=0
+                            this.model.metaData.rowGroupBys.forEach(field => {
+                                const fieldName = field.split(':')[0];
+                                const fieldInfo = this.model.metaData.fields[fieldName];
+                                var gbys_new_value = cell.groupId[0][row_field_index];
+                                if (fieldInfo && (fieldInfo.type === 'date' || fieldInfo.type === 'datetime')) {
+                                    gbys_new_value = this.formatDate(gbys_new_value, 'date');
+                                }
+                                
+                                tocreate[fieldName] = gbys_new_value;
+                                row_field_index++;
+                            });
+                            var colfield_index=0
+                            this.model.metaData.colGroupBys.forEach(colfield => {
+                                const colfieldName = colfield.split(':')[0];
+                                const colfieldInfo = this.model.metaData.fields[colfieldName];
+                                var col_old_value = cell.groupId[1][colfield_index];
+                                if (colfieldInfo && (colfieldInfo.type === 'date' || colfieldInfo.type === 'datetime')) {
+                                    col_old_value = this.formatDate(col_old_value, 'date');
+                                }
+                                
+                                tocreate[colfieldName] = col_old_value;
+                                colfield_index++;
+                            });
+                        }
+                    }
+                    console.log("tocreate============>",tocreate,)
+                    if (tocreate && Object.keys(tocreate).length > 0 && tocreate[cell.measure] !== undefined && tocreate[cell.measure] !== null && tocreate[cell.measure] != 0) {
+                        tocreate['name'] = cell.name || '-';
+                        creates.push(tocreate);
+                    }
+                    
+                }
+                cell_index++;
+            }
+            row_index++;
         }
+        
+        
+        setTimeout(async function() {
+            this.state.edits = edits;
+
+            console.log("*********this.state.edits************",this.state.edits);
+            console.log("*********this.model.data.newRows************",this.model.data.newRows);
+            try {
+            
+                const modelFields = await this.orm.call(
+                    this.model.metaData.resModel, 
+                    'fields_get',
+                    [],
+                    { attributes: ['string', 'type', 'required'] }
+                );
+                /*this.model.data.newRows?.forEach(newRow => {
+                    console.log("newRow",newRow,newRow.subGroupMeasurements);
+                    if (newRow.id && newRow.id.startsWith('new_')) {
+                        newRow.subGroupMeasurements.forEach(cell => {
+                            console.log("cell======",cell);
+                            
+                            if (cell.value !== null && cell.value !== undefined && cell.value !== '') {
+                                const recordData = {};
+                                
+                                Object.entries(newRow.data).forEach(([fieldName, fieldData]) => {
+                                    let value = fieldData?.value;
+                                    
+                                    // Gérer les champs obligatoires vides
+                                    if ((value === null || value === undefined || value === '') && 
+                                        modelFields[fieldName]?.required) {
+                                        value = this.getDefaultValueForField(modelFields[fieldName].type);
+                                    }
+                                    
+                                    recordData[fieldName] = value;
+                                });
+                                
+                                // Ajouter la mesure
+                                recordData[cell.measure] = parseFloat(cell.value) || 0;
+                                
+                                // Vérifier que tous les champs obligatoires sont remplis
+                                const missingRequiredFields = Object.entries(modelFields)
+                                    .filter(([name, field]) => field.required && !recordData[name])
+                                    .map(([name]) => name);
+                                
+                                if (missingRequiredFields.length === 0) {
+                                    creates.push(recordData);
+                                } else {
+                                    console.warn(`Missing required fields: ${missingRequiredFields.join(', ')}`);
+                                    this.notification.add(
+                                        _t("Missing required fields: %s", missingRequiredFields.join(', ')), 
+                                        { type: "warning" }
+                                    );
+                                }
+                            }
+                        });
+                    }
+                });*/
+                /*$('.o_matrix_new_row').each((index, row) => {
+                    console.log("o_matrix_new_row",row,index);
+
+                });*/
+
+                /*Object.entries(edits).forEach(([rowId, changes]) => {
+                    if (!rowId.startsWith('new_')) {
+                        const cleanChanges = {};
+                        Object.entries(changes).forEach(([field, value]) => {
+                            const fieldInfo = this.model.metaData.fields[field];
+                            
+                            if (fieldInfo && fieldInfo.type === 'many2one') {
+                                // Many2one conversion
+                                var field_id=$('#'+field+'_'+rowId).attr('data-value');
+                                value = value || parseInt(field_id);
+                                cleanChanges[field] = value;
+                            } 
+                            else if (fieldInfo && fieldInfo.type === 'selection') {
+                                // Selection conversion
+                                const selection = this.getSelectionOptions(field);  
+                                const selectedOption = selection.find(option => option[0] === value);
+                                if (selectedOption) {
+                                    cleanChanges[field] = selectedOption[0];
+                                }   
+                            
+                            } else if (fieldInfo && (fieldInfo.type === 'date' || fieldInfo.type === 'datetime')) {
+                                
+                                // Conversion date/datetime
+                                
+                                var field_date=$('#'+field+'_'+rowId).attr('data-value');
+                                if (field_date) {
+                                    value = field_date;
+                                }else {
+                                    value = this.formatDate(value);
+                                }
+                                if (value) {
+                                    const dateObj = new Date(value);
+                                    const pad = n => String(n).padStart(2, '0');
+                                    if (fieldInfo.type === 'datetime') {
+                                        cleanChanges[field] = `${dateObj.getFullYear()}-${pad(dateObj.getMonth() + 1)}-${pad(dateObj.getDate())} ${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}:${pad(dateObj.getSeconds())}`;
+                                    } else {
+                                        cleanChanges[field] = `${dateObj.getFullYear()}-${pad(dateObj.getMonth() + 1)}-${pad(dateObj.getDate())}`;
+                                    }
+                                } else {
+                                    cleanChanges[field] = false;
+                                }
+                            } else {
+                                
+                                cleanChanges[field] = value;
+                            }
+                        });
+                        updates.push({
+                            id: parseInt(rowId, 10),
+                            changes: cleanChanges
+                        });
+                    }
+                });*/
+                console.log("------creates-------", creates);
+                console.log("---------updates---------", updates);
+                if (creates.length) {
+                    await this.orm.create(
+                        this.model.metaData.resModel,
+                        creates 
+                    );
+                }
+                
+                if (updates.length) {
+                    for (const update of updates) {
+                        await this.orm.write(
+                            this.model.metaData.resModel,
+                            [update.id],
+                            update.changes
+                        );
+                    }
+                }
+
+                this.model.data.newRows = [];
+                this.state.isEditing = false;
+                this.state.edits = {};
+                await this.model.load(this.model.searchParams);
+                
+                
+                this.notification.add(_t("Changes saved successfully"), { type: "success" });
+                $('.o_matrix_edit').show();
+                $('.o_matrix_download').show();
+                $('.o_matrix_save').hide();
+                $('.o_matrix_cancel').hide();
+                this.model.notify();
+                this.render();
+                setTimeout(function(){ window.location.reload();},100);
+            } catch (error) {
+                console.error("Save error:", error);
+                this.notification.add(_t("Error saving changes"), { type: "danger" });
+            }
+        }.bind(this), 400);
     }
     //Cancel Button to cancel the ongoing modifications and render the readonly mode
     onCancelButtonClicked(){
@@ -241,14 +994,203 @@ export class MatrixRenderer extends Component {
         $('.o_matrix_download').show();
         $('.o_matrix_save').hide();
         $('.o_matrix_cancel').hide();
+        
+        // Reset model state
+        this.model.data.newRows = [];
+        this.model.load(this.model.searchParams);
+        
+        // Reset UI state
         this.state.isEditing = false;
         this.state.edits = {};
+        $('.new_col').remove();
+        this.model.notify();
+    }
+
+
+    onAddLineClicked() {
+        this.model.addLine();
+        this.state.edits = this.state.edits || {};
+        const newRowId = this.model.data.newRows[0]?.id;
+        if (newRowId) {
+            this.state.edits[newRowId] = {};
+            this.model.metaData.rowGroupBys.forEach(field => {
+                const fieldName = field.split(':')[0];
+                this.state.edits[newRowId][fieldName] = null;
+                /*field.subGroupMeasurements.forEach(cell => {
+                    this.state.edits[newRowId][cell.measure] = null;
+                });*/
+            });
+        }
+        this.render();
+        setTimeout(function(){
+            //const firstInput = $('.edit_mode').first();
+            const lastNewRow = this.model.data.newRows.length - 1;
+            const InputToFocus = $('tr[class="o_matrix_new_row"]').eq(lastNewRow).find('.edit_mode').first();
+            if (InputToFocus) {
+                InputToFocus.focus();
+            }
+        }.bind(this),100);
+    }
+
+    getDynamicColumns() {
+        return this.model.data?.dynamicColumns 
+            ? [...this.model.data.dynamicColumns.keys()] 
+            : [];
+    }
+    
+    /*async onAddColumnClicked(cell,cell_index,model) {
+        alert("onAddColumnClicked");
+        const dynamicColumns = this.model.data.dynamicColumns || new Map();
+        console.log("dynamicColumns", dynamicColumns);
+        if (dynamicColumns.size >= 16384)// 16384 is the max number of columns in Excel
+        {
+            this.notification.add(_t("Maximum number of dynamic columns reached."), { type: "danger" });
+            return;
+        }
+        console.log(this.model.metaData.colFields)
+        const usedFields = Array.from(dynamicColumns.values()).map(c => c.fieldName);
+        console.log("usedFields", usedFields);
+        const availableColumns = (this.model.metaData.colFields || [])
+            .filter(f => !usedFields.includes(f));
+        console.log("availableColumns", availableColumns);
+        
+        const $container = $(this.rootRef.el);
+        $container.attr("data-tooltip", _t("Select a column"));
+        $container.addClass("o_input_dropdown");
+        $container.css('display', 'block');
+        const $dropdown = $(`
+            <div class="custom-dropdown">
+                ${availableColumns.map(f => `
+                    <div class="dropdown-item" data-field="${f}">
+                        ${this.model.metaData.fields[f].string}
+                    </div>
+                `).join('')}
+            </div>
+        `);
+        console.log($dropdown);
+        $dropdown.on('click', '.dropdown-item', (e) => {
+            const fieldName = $(e.currentTarget).data('field');
+            this.model.addDynamicColumn(fieldName);
+            $dropdown.remove();
+        });
+        console.log("$container", $container);
+        $container.append($dropdown);
+    }*/
+
+    async onAddColumnClicked(cell,cell_index,model) {
+        console.log("onAddColumnClicked", cell,cell_index,model);
+        const th = document.querySelector(`th[name="${cell.name}"][index="${cell_index}"]`);
+        const newTh = document.createElement('th');
+        newTh.classList.add('new_col');
+        const next_cell_index=cell_index+1;
+        newTh.setAttribute('name', '${cell.name}');
+        newTh.setAttribute('index', '${next_cell_index}');
+        newTh.setAttribute('colspan', '{th.getAttribute("colspan")}');
+        newTh.setAttribute('rowspan', '{th.getAttribute("rowspan")}');
+        const div_many2one = `
+        <div class="o_field_widget o_field_many2one" name="${cell.name}">
+            <div class="o_field_many2one_selection">
+            <div class="o_input_dropdown" id="div_${next_cell_index}_${cell.name}">
+                <div class="o-autocomplete dropdown">
+                <input type="text" class="o-autocomplete--input o_input edit_mode"
+                        autocomplete="off" placeholder=""
+                        style="margin-top:3px!important;height: 30px!important;" name="${cell.name}">
+                </div>
+                <span class="o_dropdown_button" style="top:13px!important;"></span>
+            </div>
+            </div>
+            <div class="o_field_many2one_extra"></div>
+        </div>`;
+        /*newTh.innerHTML = div_many2one;
+        th.insertAdjacentElement('afterend', newTh);
+        const dropdownDiv = newTh.querySelector(`#div_${next_cell_index}_${cell.name}`);
+        if (dropdownDiv) {
+            dropdownDiv.addEventListener('click', (ev) => {
+                this.displayMany2oneRecord(ev, cell.name, next_cell_index, cell);
+            });
+        }*/
+        this.table.headers.forEach((headerRow, index) => {
+            if (index > 0) {
+                console.log("headerRow===",headerRow,index);
+                const headerRow_th = document.querySelector(`th[name="${headerRow[0].name}"][index="${headerRow.length-1}"]`);
+                const headerRow_newTh = document.createElement('th');
+                headerRow_newTh.classList.add('new_col');
+                const next_headerRow_index=headerRow.length;
+                headerRow_newTh.setAttribute('name', '${headerRow[0].name}');
+                headerRow_newTh.setAttribute('index', '${next_headerRow_index}');
+                headerRow_newTh.setAttribute('colspan', '{headerRow_th.getAttribute("colspan")}');
+                headerRow_newTh.setAttribute('rowspan', '{headerRow_th.getAttribute("rowspan")}');
+                const headerRow_div_many2one = `
+                <div class="o_field_widget o_field_many2one" name="${headerRow[0].name}">
+                    <div class="o_field_many2one_selection">
+                    <div class="o_input_dropdown" id="div_${next_headerRow_index}_${headerRow[0].name}">
+                        <div class="o-autocomplete dropdown">
+                        <input type="text" class="o-autocomplete--input o_input edit_mode"
+                                autocomplete="off" placeholder=""
+                                style="margin-top:3px!important;height: 30px!important;" name="${headerRow[0].name}">
+                        </div>
+                        <span class="o_dropdown_button" style="top:13px!important;"></span>
+                    </div>
+                    </div>
+                    <div class="o_field_many2one_extra"></div>
+                </div>`;
+                headerRow_newTh.innerHTML = headerRow_div_many2one;
+                headerRow_th.insertAdjacentElement('afterend', headerRow_newTh);
+                const headerRowdropdownDiv = headerRow_newTh.querySelector(`#div_${next_headerRow_index}_${headerRow[0].name}`);
+                if (headerRowdropdownDiv) {
+                    headerRowdropdownDiv.addEventListener('click', (ev) => {
+                        this.displayMany2oneRecord(ev, headerRow[0].name, next_headerRow_index, headerRow);
+                    });
+                }
+            }
+        });
+        //duplicate last measure header
+        const thead = document.querySelector('table thead');
+        const headerRows = thead.querySelectorAll('tr');
+        const lastHeaderRow = headerRows[headerRows.length - 1];
+        const lastTh = lastHeaderRow.querySelector('th:last-of-type');
+        const newMeasureTh = lastTh.cloneNode(true);
+        newMeasureTh.classList.add('new_col');
+        lastHeaderRow.appendChild(newMeasureTh);
+
+        const rows = document.querySelectorAll('table tbody tr');
+
+        rows.forEach((row) => {
+            const lastTd = row.querySelector('td:last-of-type');
+
+            if (lastTd) {
+                const newTd = lastTd.cloneNode(true);
+                newTd.innerHTML = `<input type="number" class="form-control edit_mode">`;
+                //const inputs = newTd.querySelectorAll('input');
+                //inputs.forEach(input => input.value = '');
+                newTd.classList.add('new_col');
+                row.appendChild(newTd);
+            }
+        });
+    }
+    async onHeaderClick(columnKey) {
+        if (!this.model.data.dynamicColumns || !this.model.data.dynamicColumns.has(colKey)) return;
+        const column = this.model.data.dynamicColumns.get(columnKey);
+        const field = column.fieldInfo;
+        
+        if (field.type === 'many2one') {
+            const records = await this.orm.searchRead(field.relation, [], ['display_name']);
+            // Afficher la liste déroulante
+            this._renderMany2OneDropdown(columnKey, records);
+        }
+    }
+
+    _renderMany2OneDropdown(columnKey, options) {
+        alert("onHeaderClick","_renderMany2OneDropdown");
+        // Logique similaire à l'implémentation existante pour les lignes
+        // Mettre à jour via: this.model.updateColumnValue(columnKey, selectedId)
     }
     /**
      * Exports the current matrix table data in a xls file. For this, we have to
      * serialize the current state, then call the server /matrix_view/matrix/export_xlsx.
      * Force a reload before exporting to ensure to export up-to-date data.
      */
+    
     onDownloadButtonClicked() {
         if (this.model.getTableWidth() > 16384) {
             throw new Error(
@@ -307,7 +1249,7 @@ export class MatrixRenderer extends Component {
      * @param {CustomEvent} ev
      */
     onOpenView(cell) {
-        if (cell.value === undefined || this.model.metaData.disableLinking) {
+        if (cell.value === undefined || this.model.metaData.disableLinking || this.state.isEditing) {
             return;
         }
 
@@ -332,6 +1274,57 @@ export class MatrixRenderer extends Component {
         };
         this.openView(this.model.getGroupDomain(group), this.views, context);
     }
+
+
+// Add default values for required fields not in the changes
+_addDefaultValues(changes, requiredFields) {
+    const completeChanges = { ...changes };
+    
+    // Check for any required fields not in our changes
+    const missingRequired = requiredFields.filter(
+        field => !(field in completeChanges)
+    );
+    
+    // Set default values for missing required fields
+    missingRequired.forEach(field => {
+        completeChanges[field] = this._getDefaultValueForField(field);
+    });
+    
+    return completeChanges;
+}
+
+// Get sensible default values for different field types
+_getDefaultValueForField(fieldName) {
+    const field = this.model.metaData.fields[fieldName];
+    if (!field) return false; // Fallback
+    
+    switch (field.type) {
+        case 'char':
+            return '-';
+        case 'text':
+            return '-';
+        case 'integer':
+            return 0;
+        case 'float':
+            return 0;
+        case 'monetary':
+            return 0;
+        case 'boolean':
+            return false;
+        case 'date':
+            return moment().format('YYYY-MM-DD');
+        case 'datetime':
+            return moment().format('YYYY-MM-DD HH:mm:ss');
+        case 'many2one':
+            return false; // False is valid for unset many2one
+        case 'selection':
+            const options = field.selection || [];
+            return options.length ? options[0][0] : false;
+        default:
+            return false;
+    }
+}
+
    
 }
 MatrixRenderer.template = "matrix_view.MatrixRenderer";

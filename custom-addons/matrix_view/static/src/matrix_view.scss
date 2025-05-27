@@ -71,9 +71,36 @@
     }
 }*/
 
-/*.o_matrix table {
+.o_matrix table {
     font-size: 12px;
-}*/
-/*.o_matrix th, .o_matrix td {
+}
+.o_matrix thead th{
+    font-weight: bold;
+}
+.o_matrix th, .o_matrix td {
     padding: 4px 8px;
-}*/
+    white-space: nowrap;
+    
+}
+.edit_mode{
+    background-color:white!important;
+}
+
+.o-autocomplete--dropdown-menu {
+    background: white;
+    border: 1px solid #ccc;
+    max-height: 200px;
+    overflow-y: auto;
+    width: 300px;
+}
+.o-autocomplete--dropdown-item a {
+    padding: 5px 10px;
+}
+.o-autocomplete--dropdown-item a:hover {
+    background-color: #eee;
+}
+
+.o-autocomplete--dropdown-item.active > a {
+    background-color: #e0e0e0;  /* or your theme's active color */
+    font-weight: bold;
+}
