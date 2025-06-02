@@ -194,16 +194,22 @@ export class MatrixModel extends Model {
         for (const groupBy of this.metaData.rowGroupBys) {
             const fieldName = groupBy.split(':')[0];
             const field = this.metaData.fields[fieldName];
+            console.log("field",field)
             let label='';
+            let value = defaults[fieldName];
             if (field.type=='many2one' && defaults[fieldName]!== undefined) {
-                let record = await this.orm.searchRead(this.metaData.resModel,[['id','=',defaults[fieldName]]] , ["display_name"]);
+                let record = await this.orm.searchRead(field.relation,[['id','=',defaults[fieldName]]] , ["display_name"]);
                 label= record.length > 0 ? record[0].display_name : '';
+            }
+            else if (field.type === 'date' || field.type === 'datetime') {
+                label = formatDate(value, field.type);
+                value = formatDate(value, field.type);
             }
             
             // Initialize with proper structure
             data[fieldName] = {
                 //value: this._getDefaultValueForField(field),
-                value: defaults[fieldName],// || this._getDefaultValueForField(field),
+                value: value,// || this._getDefaultValueForField(field),
                 label: label,
                 ...(this.data[fieldName] || {}) // Preserve existing data if any
             };

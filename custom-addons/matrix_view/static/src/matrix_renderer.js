@@ -975,8 +975,8 @@ export class MatrixRenderer extends Component {
             this.state.edits[newRowId] = {};
             this.model.metaData.rowGroupBys.forEach(field => {
                 const fieldName = field.split(':')[0];
-                console.log("default value",this.model.metaData.fields[fieldName].default)
-                this.state.edits[newRowId][fieldName] = null;
+                console.log("default value",field.value)
+                this.state.edits[newRowId][fieldName] = field.value?field.value:null;
                 /*field.subGroupMeasurements.forEach(cell => {
                     this.state.edits[newRowId][cell.measure] = null;
                 });*/
