@@ -112,13 +112,23 @@
                                                 <div class="o_input_dropdown" t-on-click="(ev) => this.displayMany2oneRecord(ev,fieldName,row_index,row)"
                                                     t-att-id="'div_'+row_index +'_' +fieldName">
                                                     <div class="o-autocomplete dropdown">
-                                                        <input type="text" class="o-autocomplete--input o_input edit_mode" 
-                                                        t-att-name="fieldName"
-                                                        autocomplete="off" placeholder="" t-att-id="fieldName+'_'+record_line_id"
-                                                        t-att-value="row.data[fieldName]?.label || ''"
-                                                        t-att-data-value="row.isNew?row.data[fieldName]?.value:''" 
-                                                        style="margin-top:3px!important;height: 30px!important;"
-                                                        />
+                                                        <t t-if="row.isNew">
+                                                            <input type="text" class="o-autocomplete--input o_input edit_mode" 
+                                                                t-att-name="fieldName"
+                                                                autocomplete="off" placeholder="" t-att-id="fieldName+'_'+record_line_id"
+                                                                t-att-value="row.data[fieldName]?.label || ''"
+                                                                t-att-data-value="row.data[fieldName]?.value ||''" 
+                                                                style="margin-top:3px!important;height: 30px!important;"
+                                                            />
+                                                        </t>
+                                                        <t t-else="">
+                                                                <input type="text" class="o-autocomplete--input o_input edit_mode" 
+                                                                t-att-name="fieldName"
+                                                                autocomplete="off" placeholder="" t-att-id="fieldName+'_'+record_line_id"
+                                                                t-att-value="row.data[fieldName]?.label || ''"
+                                                                style="margin-top:3px!important;height: 30px!important;"
+                                                            />
+                                                        </t>
                                                     </div>
                                                     <span class="o_dropdown_button" style="top:13px!important;"></span>
                                                 </div>
@@ -135,11 +145,19 @@
                                         <t t-if="state.isEditing">
                                             <!-- Editable row group fields -->
                                             <t t-if="getFieldType(fieldName) === 'date'">
-                                                <input type="date" t-att-name="fieldName"
-                                                    t-att-value="formatDate(row.data[fieldName]?.value,getFieldType(fieldName))" 
-                                                    t-att-data-value="row.isNew?formatDate(row.data[fieldName]?.value,getFieldType(fieldName)):''"
-                                                    t-on-change="(ev) => onFieldEdit(fieldName+'_'+record_line_id,row)"
-                                                    class="form-control edit_mode o_field_date" t-att-id="fieldName+'_'+record_line_id"/>
+                                                <t t-if="row.isNew">
+                                                    <input type="date" t-att-name="fieldName"
+                                                        t-att-value="formatDate(row.data[fieldName]?.value,getFieldType(fieldName))" 
+                                                        t-att-data-value="formatDate(row.data[fieldName]?.value,getFieldType(fieldName))"
+                                                        t-on-change="(ev) => onFieldEdit(fieldName+'_'+record_line_id,row)"
+                                                        class="form-control edit_mode o_field_date" t-att-id="fieldName+'_'+record_line_id"/>
+                                                </t>
+                                                <t t-else="">
+                                                    <input type="date" t-att-name="fieldName"
+                                                        t-att-value="formatDate(row.data[fieldName]?.value,getFieldType(fieldName))" 
+                                                        t-on-change="(ev) => onFieldEdit(fieldName+'_'+record_line_id,row)"
+                                                        class="form-control edit_mode o_field_date" t-att-id="fieldName+'_'+record_line_id"/>
+                                                </t>
                                             </t>
                                             
                                             <t t-elif="getFieldType(fieldName) === 'selection'">
@@ -154,11 +172,19 @@
                                                 </select>
                                             </t>
                                             <t t-else="">
-                                                <input type="text" t-att-name="fieldName"
-                                                    t-att-value="row.data[fieldName]?.value" t-att-id="fieldName+'_'+record_line_id"
-                                                    t-att-data-value="row.isNew?row.data[fieldName]?.value:''"
-                                                    t-on-change="(ev) => onFieldEdit(fieldName+'_'+record_line_id,row)"
-                                                    class="form-control edit_mode"/>
+                                                <t t-if="row.isNew">
+                                                    <input type="text" t-att-name="fieldName"
+                                                        t-att-value="row.data[fieldName]?.value" t-att-id="fieldName+'_'+record_line_id"
+                                                        t-att-data-value="row.data[fieldName]?.value ||''"
+                                                        t-on-change="(ev) => onFieldEdit(fieldName+'_'+record_line_id,row)"
+                                                        class="form-control edit_mode"/>
+                                                </t>
+                                                <t t-else="">
+                                                    <input type="text" t-att-name="fieldName"
+                                                        t-att-value="row.data[fieldName]?.value" t-att-id="fieldName+'_'+record_line_id"
+                                                        t-on-change="(ev) => onFieldEdit(fieldName+'_'+record_line_id,row)"
+                                                        class="form-control edit_mode"/>
+                                                </t>
                                             </t>
                                         </t>
                                         <t t-else="">

@@ -194,7 +194,6 @@ export class MatrixModel extends Model {
         for (const groupBy of this.metaData.rowGroupBys) {
             const fieldName = groupBy.split(':')[0];
             const field = this.metaData.fields[fieldName];
-            console.log("field",field)
             let label='';
             let value = defaults[fieldName];
             if (field.type=='many2one' && defaults[fieldName]!== undefined) {
@@ -1226,12 +1225,9 @@ export class MatrixModel extends Model {
                     const value = this._getCellValue(groupIntersectionId, measure, originIndexes, {
                         data: this.data,
                     });
-                    console.log("groupIntersectionId============", groupIntersectionId);
                     /*const recordIds = this._getRecordIdsForCell(groupIntersectionId).then(record_ids => {
-                            console.log(record_ids); // -> [1]
                             return record_ids; 
                         });*/
-                    //console.log("recordIds============", recordIds,recordIds[0]);
                     row.subGroupMeasurements.push({
                         id: groupIntersectionId,
                         groupId: groupIntersectionId,
