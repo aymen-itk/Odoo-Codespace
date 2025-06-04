@@ -562,7 +562,7 @@ export class MatrixRenderer extends Component {
     }
     //Save Button to save the modified datas and render the readonly mode
     
-    async _getRecordDataForCell(groupId,cell_field) {
+    /*async _getRecordDataForCell(groupId,cell_field) {
         const domain = [];
         // Add row group filters
         this.model.metaData.rowGroupBys.forEach((groupBy, index) => {
@@ -605,7 +605,38 @@ export class MatrixRenderer extends Component {
 
         return records;
         
+    }*/
+    async _getRecordDataForCell(groupId, cell_field) {
+        const domain = [];
+
+        const formatGroup = (groupBys, groupValues) => {
+            return groupBys.map((groupBy, index) => {
+                const fieldName = groupBy.split(':')[0];
+                let value = groupValues[index];
+                const fieldInfo = this.model.metaData.fields[fieldName];
+                if (fieldInfo && fieldInfo.type === 'date') {
+                    value = this.formatDate(value, 'date');
+                }
+                return [fieldName, '=', value];
+            });
+        };
+
+        domain.push(...formatGroup(this.model.metaData.rowGroupBys, groupId[0]));
+        domain.push(...formatGroup(this.model.metaData.colGroupBys, groupId[1]));
+
+        if (!domain.length) return [];
+
+        const allFields = new Set([
+            'id',
+            cell_field,
+            ...this.model.metaData.rowGroupBys.map(f => f.split(':')[0]),
+            ...this.model.metaData.colGroupBys.map(f => f.split(':')[0]),
+        ]);
+
+        const records = await this.orm.searchRead(this.model.metaData.resModel, domain,[...allFields]);
+        return records;
     }
+
     async onSaveButtonClicked() {
         const edits = {};
         const creates = [];
