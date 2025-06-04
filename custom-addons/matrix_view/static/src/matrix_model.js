@@ -188,6 +188,13 @@ export class MatrixModel extends Model {
     async _createEmptyRowData() {
         console.log("Creating empty row data");
         const defaults = await this.orm.call(this.metaData.resModel, "default_get", [this.metaData.rowGroupBys.map(gb => gb.split(':')[0])]);
+        console.log("this.searchParams.context",this.searchParams.context)
+        for (const [key, val] of Object.entries(this.searchParams.context)) {
+            if (key.startsWith("default_")) {
+                const fieldName = key.slice(8);  // Remove "default_" prefix
+                defaults[fieldName] = val;
+            }
+        }  
         console.log("defaults",defaults)
         const data = {};
         //this.metaData.rowGroupBys.forEach(groupBy => {
@@ -1325,6 +1332,10 @@ export class MatrixModel extends Model {
 
         this.data = config.data;
         this.metaData = config.metaData;
+
+        console.log("MatrixModel: data loaded", this.data);
+        console.log("MatrixModel: metaData loaded", this.metaData);
+        console.log("MatrixModel: model ", this.searchParams.context);
     }
     /**
      * @protected

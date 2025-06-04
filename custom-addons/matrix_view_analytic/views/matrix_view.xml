@@ -58,6 +58,7 @@
         <field name="view_mode">tree,kanban,form,graph,pivot,matrix</field>
         <field name="view_id" ref="analytic.view_account_analytic_line_tree"/>
         <field name="search_view_id" ref="analytic.view_account_analytic_line_filter"/>
+        <field name="context">{'default_partner_id':1,'default_product_id':1}</field>
     </record>
     
 </odoo>

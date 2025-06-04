@@ -547,7 +547,7 @@ export class MatrixRenderer extends Component {
         const domain = [];
         
         // Build domain from row group values
-        this.metaData.rowGroupBys.forEach(groupBy => {
+        this.model.metaData.rowGroupBys.forEach(groupBy => {
             const fieldName = groupBy.split(':')[0];
             const value = row.data[fieldName]?.value;
             if (value !== undefined && value !== null) {
@@ -558,7 +558,7 @@ export class MatrixRenderer extends Component {
         if (domain.length === 0) return [];
         
         // Get matching record IDs
-        return this.orm.search(this.metaData.resModel, domain, { limit: 1000 });
+        return this.orm.search(this.model.metaData.resModel, domain, { limit: 1000 });
     }
     //Save Button to save the modified datas and render the readonly mode
     
@@ -1031,7 +1031,17 @@ export class MatrixRenderer extends Component {
                 this.displayMany2oneRecord(ev, cell.name, next_cell_index, cell);
             });
         }*/
-        this.table.headers.forEach((headerRow, index) => {
+        const defaults = await this.model.orm.call(this.model.metaData.resModel, "default_get", [this.model.metaData.rowGroupBys.map(gb => gb.split(':')[0])]);
+        console.log("this.model.searchParams.context",this.model.searchParams.context)
+        for (const [key, val] of Object.entries(this.model.searchParams.context)) {
+            if (key.startsWith("default_")) {
+                const fieldName = key.slice(8);  // Remove "default_" prefix
+                defaults[fieldName] = val;
+            }
+        }  
+        console.log("defaults",defaults)
+        let index = 0;
+        for (const headerRow of this.table.headers) {
             if (index > 0) {
                 const headerRow_th = document.querySelector(`th[name="${headerRow[0].name}"][index="${headerRow.length-1}"]`);
                 const headerRow_newTh = document.createElement('th');
@@ -1041,6 +1051,14 @@ export class MatrixRenderer extends Component {
                 headerRow_newTh.setAttribute('index', '${next_headerRow_index}');
                 headerRow_newTh.setAttribute('colspan', '{headerRow_th.getAttribute("colspan")}');
                 headerRow_newTh.setAttribute('rowspan', '{headerRow_th.getAttribute("rowspan")}');
+                const fieldName=headerRow[0].name;
+                const fieldInfo = this.model.metaData.fields[fieldName];
+                let defaultValue = defaults[fieldName] || '';
+                let defaultValueLabel = defaults[fieldName] || '';
+                if (fieldInfo && fieldInfo.type === 'many2one') {
+                        let record = await this.model.orm.searchRead(fieldInfo.relation,[['id','=',defaults[fieldName]]] , ["display_name"]);
+                        defaultValueLabel= record.length > 0 ? record[0].display_name : '';
+                }
                 const headerRow_div_many2one = `
                 <div class="o_field_widget o_field_many2one" name="${headerRow[0].name}">
                     <div class="o_field_many2one_selection">
@@ -1048,7 +1066,9 @@ export class MatrixRenderer extends Component {
                         <div class="o-autocomplete dropdown">
                             <input type="text" class="o-autocomplete--input o_input edit_mode"
                                 autocomplete="off" placeholder="" id="${'newcol_'+headerRow[0].name+'_'+next_cell_index}"
-                                style="margin-top:3px!important;height: 30px!important;" name="${headerRow[0].name}">
+                                style="margin-top:3px!important;height: 30px!important;" name="${headerRow[0].name}"
+                                value="${defaultValueLabel || ''}"
+                                data-value="${defaultValue || ''}" >
                         </div>
                         <span class="o_dropdown_button" style="top:13px!important;"></span>
                     </div>
@@ -1064,7 +1084,8 @@ export class MatrixRenderer extends Component {
                     });
                 }
             }
-        });
+            index++;
+        }
         //duplicate last measure header
         const thead = document.querySelector('table thead');
         const headerRows = thead.querySelectorAll('tr');
