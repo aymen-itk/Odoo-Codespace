@@ -248,37 +248,41 @@ export class MatrixRenderer extends Component {
      */
     async getMany2OneOptions(fieldName) {
         const field = this.model.metaData.fields[fieldName];
+        const fieldAttrs = this.model.metaData.fieldAttrs[fieldName];
+        console.log("fieldAttrs",fieldAttrs)
+        console.log("field.domain",field.domain);
         if (field.type === "many2one") {
             const model = field.relation;
             let domain = [];
             const pattern = "(company_id and ['|', ('company_id', '=', False), ('company_id', 'parent_of', [company_id])] or ['|', ('company_id', '=', False), ('company_id', 'parent_of', [''])])";
-            // if (field.domain) {
-            //     // Replace the pattern with the actual company_id
-            //     var fieldDomain=JSON.stringify(field.domain);
-            //     if (fieldDomain.includes(pattern)) {
-            //         domain = companyId
-            //                     ? ['|', ['company_id', '=', false], ['company_id', 'parent_of', companyId]]
-            //                     : ['|', ['company_id', '=', false], ['company_id', 'parent_of', '']];
-            //         /*try {
+            if (field.domain || fieldAttrs?.domain) {
+                // Replace the pattern with the actual company_id
+                var fieldDomain = fieldAttrs?.domain?fieldAttrs.domain:field.domain
+                fieldDomain=JSON.stringify(fieldDomain);
+                if (fieldDomain.includes(pattern)) {
+                    domain = companyId
+                                ? ['|', ['company_id', '=', false], ['company_id', 'parent_of', companyId]]
+                                : ['|', ['company_id', '=', false], ['company_id', 'parent_of', '']];
+                    /*try {
                     
-            //             var splitedDomain=fieldDomain.split('+');
+                        var splitedDomain=fieldDomain.split('+');
                         
-            //             if (splitedDomain.length > 1) {
-            //                 var additionalDomain=new Domain(eval(splitedDomain[1].trim())).toList();
-            //                 domain=[...companyDomain, ...additionalDomain];
-            //             }
+                        if (splitedDomain.length > 1) {
+                            var additionalDomain=new Domain(eval(splitedDomain[1].trim())).toList();
+                            domain=[...companyDomain, ...additionalDomain];
+                        }
                     
                     
-            //         } catch (error) {
-            //             console.error("Invalid domain:", field.domain, error);
-            //             domain=[]
-            //         }*/
-            //     }
-            //     else{
-            //         domain=new Domain(field.domain).toList();
-            //     }
-            // }
-            
+                    } catch (error) {
+                        console.error("Invalid domain:", field.domain, error);
+                        domain=[]
+                    }*/
+                }
+                else{
+                    domain = fieldAttrs?.domain ? new Domain(fieldAttrs.domain).toList() : new Domain(field.domain).toList();
+                }
+            }
+            console.log("domain",domain);
             const records = await this.orm.searchRead(model, domain, ["display_name"]);
             return records;
         }
@@ -543,69 +547,8 @@ export class MatrixRenderer extends Component {
         row.edited = true;
     }
     
-    _getRecordIdsForRow(row) {
-        const domain = [];
-        
-        // Build domain from row group values
-        this.model.metaData.rowGroupBys.forEach(groupBy => {
-            const fieldName = groupBy.split(':')[0];
-            const value = row.data[fieldName]?.value;
-            if (value !== undefined && value !== null) {
-                domain.push([fieldName, '=', value]);
-            }
-        });
-
-        if (domain.length === 0) return [];
-        
-        // Get matching record IDs
-        return this.orm.search(this.model.metaData.resModel, domain, { limit: 1000 });
-    }
     //Save Button to save the modified datas and render the readonly mode
     
-    /*async _getRecordDataForCell(groupId,cell_field) {
-        const domain = [];
-        // Add row group filters
-        this.model.metaData.rowGroupBys.forEach((groupBy, index) => {
-            const fieldName = groupBy.split(':')[0];
-            var value = groupId[0][index];
-            const fieldInfo = this.model.metaData.fields[fieldName]
-            if (fieldInfo && fieldInfo.type === 'date') {
-                value = this.formatDate(value, 'date');
-            }
-            
-            
-            if (value) domain.push([fieldName, '=', value]);
-        });
-        
-        
-        // Add column group filters
-        this.model.metaData.colGroupBys.forEach((groupBy, index) => {
-            const fieldName = groupBy.split(':')[0];
-            var value = groupId[1][index];
-            const fieldInfo = this.model.metaData.fields[fieldName]
-            if (fieldInfo && fieldInfo.type === 'date') {
-                value = this.formatDate(value, 'date');
-            }
-            if (value) domain.push([fieldName, '=', value]);
-        });
-        
-        
-        if (domain.length === 0) return [];
-        //return this.orm.search(this.model.metaData.resModel, domain, { limit: 1000 }).then((recordIds) => {return recordIds;});
-        const allFields = [
-            'id',cell_field,
-            ...this.model.metaData.rowGroupBys.map(f => f.split(':')[0]),
-            ...this.model.metaData.colGroupBys.map(f => f.split(':')[0]),
-        ];
-
-        const recordIds = await this.orm.search(this.model.metaData.resModel, domain, { limit: 1000 });
-        if (!recordIds.length) return [];
-
-        const records = await this.orm.read(this.model.metaData.resModel, recordIds, allFields);
-
-        return records;
-        
-    }*/
     async _getRecordDataForCell(groupId, cell_field) {
         const domain = [];
 
