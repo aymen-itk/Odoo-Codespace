@@ -84,3 +84,9 @@ class MatrixViewMixin(models.AbstractModel):
 
     def _get_record_label(self, record, fields):
         return ' / '.join(str(record[f]) for f in fields)
+    
+class MatrixBaseModel(models.BaseModel):
+    _inherit = 'base'
+    @api.model
+    def get_order(self):
+        return self._order
