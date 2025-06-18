@@ -41,7 +41,7 @@ export class MatrixRenderer extends Component {
         });
         this.state = useState({
             edits: {},
-            isEditing: false,
+            isEditing: true,
         });
         this._m2oOptions = [];
         this.resizing = false;
@@ -346,9 +346,11 @@ export class MatrixRenderer extends Component {
      * Fetch many2one options
      * @param {string} fieldName
      */
-    async getMany2OneOptions(fieldName) {
+    async getMany2OneOptions(fieldName,row) {
+        console.log("getMany2OneOptions", row);
         const field = this.model.metaData.fields[fieldName];
-        const fieldAttrs = this.model.metaData.fieldAttrs[fieldName];        
+        const fieldAttrs = this.model.metaData.fieldAttrs[fieldName];
+        console.log("domainFields", this.model.metaData.domainFields,this.model.metaData.fields);        
         if (field.type === "many2one") {
             const model = field.relation;
             let domain = [];
@@ -368,26 +370,62 @@ export class MatrixRenderer extends Component {
                     domain = companyId
                                 ? ['|', ['company_id', '=', false], ['company_id', 'in', [companyId]]]
                                 : [['company_id', '=', false]];
-                    /*try {
-                    
-                        var splitedDomain=fieldDomain.split('+');
-                        
-                        if (splitedDomain.length > 1) {
-                            var additionalDomain=new Domain(eval(splitedDomain[1].trim())).toList();
-                            domain=[...companyDomain, ...additionalDomain];
-                        }
-                    
-                    
-                    } catch (error) {
-                        console.error("Invalid domain:", field.domain, error);
-                        domain=[]
-                    }*/
                 }
                 else{
                     domain = fieldAttrs?.domain ? new Domain(fieldAttrs.domain).toList() : new Domain(field.domain).toList();
                 }
             }
             console.log("domain",domain);
+            
+            if (domain){
+                for (let i = 0; i < domain.length; i++) {
+                    if (this.model.metaData.domainFields.includes(domain[i][2]) || this.model.metaData.fields[domain[i][2]]!== undefined) {
+                        const formatGroup = (groupBys, groupValues) => {
+                            return groupBys.map((groupBy, index) => {
+                                const fieldName = groupBy.split(':')[0];
+                                let value = groupValues[index];
+                                const fieldInfo = this.model.metaData.fields[fieldName];
+                                if (fieldInfo && fieldInfo.type === 'date') {
+                                    value = this.formatDate(value, 'date');
+                                }
+                                return [fieldName, '=', value];
+                            });
+                        };
+                        console.log(this.model.metaData.colGroupBys)
+                        if (this.model.metaData.colGroupBys && this.model.metaData.colGroupBys.includes(fieldName) && this.model.metaData.domainFields.includes(domain[i][2])) {
+                            console.warn("Many2one field in colGroupBys, skipping domain modification", fieldName);
+                            const many2onedomain_records = await this.orm.searchRead(this.model.metaData.resModel, [[domain[i][2],'!=',null],[domain[i][2],'!=',[]]], [domain[i][2]],{limit:1});
+                            console.log("many2onedomain_records",many2onedomain_records);
+                            if (this.model.metaData.fields[domain[i][2]] && this.model.metaData.fields[domain[i][2]].type === 'many2one') {
+                                domain[i][2]=many2onedomain_records[0][domain[i][2]][0];
+                            }
+                            else{
+                                domain[i][2]=many2onedomain_records[0][domain[i][2]];
+                            }
+                        }
+                        else if (!row.isNew){
+                            let many2onedomain=formatGroup(this.model.metaData.rowGroupBys, row.groupId[0]);
+                            const many2onedomain_records = await this.orm.searchRead(this.model.metaData.resModel, many2onedomain, [domain[i][2]]);
+                            console.log("many2onedomain_records",many2onedomain_records);
+                            if (this.model.metaData.fields[domain[i][2]] && this.model.metaData.fields[domain[i][2]].type === 'many2one') {
+                                domain[i][2]=many2onedomain_records[0][domain[i][2]][0];
+                            }
+                            else{
+                                domain[i][2]=many2onedomain_records[0][domain[i][2]];
+                            }
+                        }
+                        else if (row.data && row.data[domain[i][2]] && (row.data[domain[i][2]].value !== undefined || row.data[domain[i][2]].id !== undefined)) {
+                            domain[i][2] = row.data[domain[i][2]].value? row.data[domain[i][2]].value : row.data[domain[i][2]].id;
+                        }
+                        else if (this.model.metaData.domainFields.includes(domain[i][2]) && row.isNew){
+                            domain=[];
+                        }
+                        
+
+                        
+                    }
+                }
+            }
             const records = await this.orm.searchRead(model, domain, ["display_name"]);
             return records;
         }
@@ -396,7 +434,7 @@ export class MatrixRenderer extends Component {
     async displayMany2oneRecord(ev, fieldName,row_id,row) {
         // Remove any existing dropdown first
         $(".o-autocomplete--dropdown-menu").remove();   
-        const options = await this.getMany2OneOptions(fieldName);
+        const options = await this.getMany2OneOptions(fieldName,row);
         this._m2oOptions = options;
         // The clicked .o_input_dropdown div
         const dropdownEl = "#div_"+row_id+"_"+fieldName;
@@ -993,16 +1031,16 @@ export class MatrixRenderer extends Component {
                 }
 
                 this.model.data.newRows = [];
-                this.state.isEditing = false;
+                this.state.isEditing = true;
                 this.state.edits = {};
                 await this.model.load(this.model.searchParams);
                 
                 
                 this.notification.add(_t("Changes saved successfully"), { type: "success" });
-                $('.o_matrix_edit').show();
-                $('.o_matrix_download').show();
-                $('.o_matrix_save').hide();
-                $('.o_matrix_cancel').hide();
+                //$('.o_matrix_edit').show();
+                //$('.o_matrix_download').show();
+                //$('.o_matrix_save').hide();
+                //$('.o_matrix_cancel').hide();
                 this.model.notify();
                 this.render();
                 setTimeout(function(){ window.location.reload();},100);
@@ -1014,20 +1052,22 @@ export class MatrixRenderer extends Component {
     }
     //Cancel Button to cancel the ongoing modifications and render the readonly mode
     onCancelButtonClicked(){
-        $('.o_matrix_edit').show();
-        $('.o_matrix_download').show();
-        $('.o_matrix_save').hide();
-        $('.o_matrix_cancel').hide();
+        //$('.o_matrix_edit').show();
+        //$('.o_matrix_download').show();
+        //$('.o_matrix_save').hide();
+        //$('.o_matrix_cancel').hide();
         
         // Reset model state
         this.model.data.newRows = [];
         this.model.load(this.model.searchParams);
         
         // Reset UI state
-        this.state.isEditing = false;
+        this.state.isEditing = true;
         this.state.edits = {};
         $('.new_col').remove();
         this.model.notify();
+        this.render();
+        setTimeout(function(){ window.location.reload();},100);
     }
 
 
@@ -1074,7 +1114,7 @@ export class MatrixRenderer extends Component {
                 <div class="o-autocomplete dropdown">
                 <input type="text" class="o-autocomplete--input o_input edit_mode"
                         autocomplete="off" placeholder=""
-                        style="margin-top:3px!important;height: 30px!important;" name="${cell.name}">
+                        style="margin-top:3px!important;height: 30px!important;min-width:190px;" name="${cell.name}">
                 </div>
                 <span class="o_dropdown_button" style="top:13px!important;"></span>
             </div>
@@ -1124,7 +1164,7 @@ export class MatrixRenderer extends Component {
                         <div class="o-autocomplete dropdown">
                             <input type="text" class="o-autocomplete--input o_input edit_mode"
                                 autocomplete="off" placeholder="" id="${'newcol_'+headerRow[0].name+'_'+next_cell_index}"
-                                style="margin-top:3px!important;height: 30px!important;" name="${headerRow[0].name}"
+                                style="margin-top:3px!important;height: 30px!important;min-width:190px;" name="${headerRow[0].name}"
                                 value="${defaultValueLabel || ''}"
                                 data-value="${defaultValue || ''}" >
                         </div>
