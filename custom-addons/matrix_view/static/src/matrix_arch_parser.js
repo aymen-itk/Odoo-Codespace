@@ -13,6 +13,7 @@ export class MatrixArchParser {
             rowGroupBys: [], // store the defined group_by used on rows
             widgets: {}, // wigdets defined in the arch
             colFields: [],
+            colOrder: null,
             domainFields: [],
         };
 
@@ -26,6 +27,9 @@ export class MatrixArchParser {
                     }
                     if (node.hasAttribute("default_order")) {
                         archInfo.defaultOrder = node.getAttribute("default_order");
+                    }
+                    if (node.hasAttribute("col_order")) {
+                        archInfo.colOrder = node.getAttribute("col_order");
                     }
                     if (node.hasAttribute("string")) {
                         archInfo.title = node.getAttribute("string");
@@ -49,7 +53,12 @@ export class MatrixArchParser {
                         node.getAttribute("invisible") === "1"
                     ) {
                         archInfo.fieldAttrs[fieldName].isInvisible = true;
-                        //break;
+                    }
+                    if (
+                        node.getAttribute("readonly") === "True" ||
+                        node.getAttribute("readonly") === "1"
+                    ) {
+                        archInfo.fieldAttrs[fieldName].isReadonly = true;
                     }
 
                     if (node.hasAttribute("interval")) {
@@ -64,6 +73,9 @@ export class MatrixArchParser {
                     if (node.getAttribute("type") === "col") {
                         archInfo.colGroupBys.push(fieldName);
                         archInfo.colFields.push(node.getAttribute("name"));
+                        if (node.hasAttribute("order")) {
+                            archInfo.fieldAttrs[fieldName].order = node.getAttribute("order");
+                        }
                     }
                     if (node.getAttribute("type") === "row") {
                         archInfo.rowGroupBys.push(fieldName);
@@ -74,6 +86,7 @@ export class MatrixArchParser {
                     if (node.getAttribute("type") === "domain") {
                         archInfo.domainFields.push(fieldName);
                     }
+                    
                     break;
                 }
             }

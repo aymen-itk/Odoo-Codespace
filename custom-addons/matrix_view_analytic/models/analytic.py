@@ -96,3 +96,39 @@ class ProductProduct(models.Model):
         help="Gives the sequence order when displaying a list of products.",
         default=10,
     )
+
+class MailThread(models.AbstractModel):
+    _inherit = 'mail.thread'
+    _description = 'Generic order retrieval for models'
+
+    def get_order(self):
+        return 'sequence, default_code, name, id'
+        """
+        Returns the default _order string defined on the model.
+        If not explicitly set, returns 'id'.
+        """
+        print("get_order called",self._order)
+        if hasattr(self, '_order'):
+            return self._order
+        if hasattr(self, '_order_fields'):
+            return ', '.join(self._order_fields)
+        if hasattr(self, 'display_name'):
+            return 'display_name'
+        if hasattr(self, 'id'):
+            return 'id'
+        return self._order or 'id'
+class MoveLine(models.Model):
+    _inherit = "account.move.line"
+    
+    def open_analytic_items(self):
+        """
+        Open analytic items for the selected move lines.
+        """
+        self.ensure_one()
+        action = self.env["ir.actions.actions"]._for_xml_id("analytic.account_analytic_line_action")
+        action['domain'] = [('move_line_id', '=', self.id)]
+        action['context'] = {
+            'default_move_line_id': self.id,
+            'default_company_id': self.company_id.id,
+        }
+        return action
