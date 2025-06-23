@@ -359,20 +359,48 @@ export class MatrixRenderer extends Component {
             if (field.domain || fieldAttrs?.domain) {
                 // Replace the pattern with the actual company_id
                 var fieldDomain = fieldAttrs?.domain?fieldAttrs.domain:field.domain;
+                
                 fieldDomain=JSON.stringify(fieldDomain);
-                console.log("fieldDomain",fieldDomain);
-                fieldDomain.includes(pattern)
                 if (fieldDomain.includes(pattern)) {
+                    console.log("fieldDomain inside includes pattern",fieldDomain);
                     domain = companyId
                                 ? ['|', ['company_id', '=', false], ['company_id', 'parent_of', companyId]]
                                 : ['|', ['company_id', '=', false], ['company_id', 'parent_of', '']];
                 } else if (fieldDomain.includes(pattern2)) {
+                    console.log("fieldDomain inside includes pattern2",fieldDomain);
                     domain = companyId
                                 ? ['|', ['company_id', '=', false], ['company_id', 'in', [companyId]]]
                                 : [['company_id', '=', false]];
                 }
                 else{
-                    domain = fieldAttrs?.domain ? new Domain(fieldAttrs.domain).toList() : new Domain(field.domain).toList();
+                    fieldDomain = fieldAttrs?.domain? fieldAttrs.domain : field.domain;
+                    
+                    try {
+                        console.log("fieldDomain after pattern check - try",fieldDomain);
+                        domain = new Domain(fieldDomain).toList();
+                        
+                    }
+                    catch (e) {
+                        //fieldDomain = JSON.stringify(fieldDomain);
+                        console.log("fieldDomain after pattern check - catch ",fieldDomain);
+                        let fieldDomainSplitted=fieldDomain.split(",");
+                        console.log("fieldDomainSplitted",fieldDomainSplitted);
+                        for (let f = 0; f < fieldDomainSplitted.length; f++) {
+                            console.log("fieldDomainSplitted[f]",fieldDomainSplitted[f]);
+                            let fSplitted=fieldDomainSplitted[f].replace(" ","").replace(")","").replace("]","").replace(",","");
+                            if (this.model.metaData.fields[fSplitted]!== undefined && this.model.metaData.fields[fSplitted].name !== undefined) {
+                                fieldDomain=fieldDomain.replace(this.model.metaData.fields[fSplitted].name+')]', "'"+String(this.model.metaData.fields[fSplitted].name) + "')]");
+                                fieldDomain=fieldDomain.replace(this.model.metaData.fields[fSplitted].name+'),]', "'"+String(this.model.metaData.fields[fSplitted].name) + "'),]");
+                                fieldDomain=fieldDomain.replace(this.model.metaData.fields[fSplitted].name+') ]', "'"+String(this.model.metaData.fields[fSplitted].name) + "') ]");
+                                fieldDomain=fieldDomain.replace(this.model.metaData.fields[fSplitted].name+' ),]', "'"+String(this.model.metaData.fields[fSplitted].name) + "' ),]");
+                                fieldDomain=fieldDomain.replace(this.model.metaData.fields[fSplitted].name+' ) ]', "'"+String(this.model.metaData.fields[fSplitted].name) + "' ) ]");
+                                fieldDomain=fieldDomain.replace(", "+this.model.metaData.fields[fSplitted].name, ", '"+String(this.model.metaData.fields[fSplitted].name) +"'");
+                                fieldDomain=fieldDomain.replace(this.model.metaData.fields[fSplitted].name+')', "'"+String(this.model.metaData.fields[fSplitted].name) + "')");
+                            }
+                        }
+                        console.log("fieldDomain after replacing fields",fieldDomain);
+                        domain = new Domain(fieldDomain).toList();
+                    }
                 }
             }
             console.log("domain",domain);
@@ -1074,7 +1102,7 @@ export class MatrixRenderer extends Component {
                 //$('.o_matrix_cancel').hide();
                 this.model.notify();
                 this.render();
-                setTimeout(function(){ window.location.reload();},100);
+                //setTimeout(function(){ window.location.reload();},100);
             } catch (error) {
                 console.error("Save error:", error);
                 this.notification.add(_t("Error saving changes"), { type: "danger" });
@@ -1098,7 +1126,7 @@ export class MatrixRenderer extends Component {
         $('.new_col').remove();
         this.model.notify();
         this.render();
-        setTimeout(function(){ window.location.reload();},100);
+        //setTimeout(function(){ window.location.reload();},100);
     }
 
 
